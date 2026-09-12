@@ -1,0 +1,393 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: studyloop
+    description: StudyLoop learning and productivity operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [studyloop]
+      summary: Get the StudyLoop dashboard
+      responses:
+        "200":
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+  /tasks:
+    post:
+      operationId: createTask
+      tags: [studyloop]
+      summary: Add a study task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskInput"
+      responses:
+        "201":
+          description: Created task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+  /tasks/{id}:
+    patch:
+      operationId: updateTask
+      tags: [studyloop]
+      summary: Update a study task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskUpdate"
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "404":
+          description: Task not found
+  /notes:
+    get:
+      operationId: listNotes
+      tags: [studyloop]
+      summary: List saved notes
+      responses:
+        "200":
+          description: Notes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Note"
+    post:
+      operationId: createNote
+      tags: [studyloop]
+      summary: Save a note
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NoteInput"
+      responses:
+        "201":
+          description: Created note
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Note"
+  /notes/{id}:
+    patch:
+      operationId: updateNote
+      tags: [studyloop]
+      summary: Update a note
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NoteUpdate"
+      responses:
+        "200":
+          description: Updated note
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Note"
+        "404":
+          description: Note not found
+    delete:
+      operationId: deleteNote
+      tags: [studyloop]
+      summary: Delete a note
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Note deleted
+        "404":
+          description: Note not found
+  /planner/generate:
+    post:
+      operationId: generatePlanner
+      tags: [studyloop]
+      summary: Generate a personalized study plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlannerInput"
+      responses:
+        "200":
+          description: Generated plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlannerResponse"
+  /assistant/ask:
+    post:
+      operationId: askAssistant
+      tags: [studyloop]
+      summary: Ask the StudyLoop assistant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantInput"
+      responses:
+        "200":
+          description: Assistant response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantResponse"
+  /notes/summarize:
+    post:
+      operationId: summarizeNote
+      tags: [studyloop]
+      summary: Summarize study notes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SummarizeNoteInput"
+      responses:
+        "200":
+          description: Note summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoteSummary"
+  /study-sessions:
+    post:
+      operationId: createStudySession
+      tags: [studyloop]
+      summary: Record a completed focus session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudySessionInput"
+      responses:
+        "201":
+          description: Study session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudySession"
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    Task:
+      type: object
+      required: [id, title, course, due, durationMinutes, tone, completed]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        course: { type: string }
+        due: { type: string }
+        durationMinutes: { type: integer }
+        tone:
+          type: string
+          enum: [orange, teal, plum]
+        completed: { type: boolean }
+    TaskInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1 }
+        course: { type: string }
+        due: { type: string }
+        durationMinutes: { type: integer, minimum: 1 }
+        tone:
+          type: string
+          enum: [orange, teal, plum]
+    TaskUpdate:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        completed: { type: boolean }
+    UpcomingItem:
+      type: object
+      required: [day, date, title, relative]
+      properties:
+        day: { type: string }
+        date: { type: string }
+        title: { type: string }
+        relative: { type: string }
+        tone:
+          type: string
+          enum: [orange, teal, plum]
+    Dashboard:
+      type: object
+      required: [tasks, weeklyProgress, streak, upcoming]
+      properties:
+        tasks:
+          type: array
+          items: { $ref: "#/components/schemas/Task" }
+        weeklyProgress: { type: integer, minimum: 0, maximum: 100 }
+        streak: { type: integer, minimum: 0 }
+        upcoming:
+          type: array
+          items: { $ref: "#/components/schemas/UpcomingItem" }
+    Note:
+      type: object
+      required: [id, title, content, summary, keyPoints, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        content: { type: string }
+        summary: { type: ["string", "null"] }
+        keyPoints:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    NoteInput:
+      type: object
+      required: [title, content]
+      properties:
+        title: { type: string, minLength: 1 }
+        content: { type: string }
+    NoteUpdate:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        content: { type: string }
+        summary: { type: ["string", "null"] }
+        keyPoints:
+          type: array
+          items: { type: string }
+    PlannerInput:
+      type: object
+      required: [subject, topics, hoursPerDay, daysUntilExam, difficulty]
+      properties:
+        subject: { type: string, minLength: 1 }
+        topics: { type: string, minLength: 1 }
+        hoursPerDay: { type: number, minimum: 0.5 }
+        daysUntilExam: { type: integer, minimum: 1 }
+        difficulty:
+          type: string
+          enum: [beginner, intermediate, advanced]
+    PlannerDay:
+      type: object
+      required: [day, focus, minutes, action]
+      properties:
+        day: { type: string }
+        focus: { type: string }
+        minutes: { type: integer }
+        action: { type: string }
+    PlannerResponse:
+      type: object
+      required: [title, overview, days, tips]
+      properties:
+        title: { type: string }
+        overview: { type: string }
+        days:
+          type: array
+          items: { $ref: "#/components/schemas/PlannerDay" }
+        tips:
+          type: array
+          items: { type: string }
+    AssistantInput:
+      type: object
+      required: [question, mode]
+      properties:
+        question: { type: string, minLength: 1 }
+        mode:
+          type: string
+          enum: [explain, summarize, practice]
+    AssistantResponse:
+      type: object
+      required: [answer, takeaways, practiceQuestion]
+      properties:
+        answer: { type: string }
+        takeaways:
+          type: array
+          items: { type: string }
+        practiceQuestion: { type: string }
+    SummarizeNoteInput:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, minLength: 1 }
+    NoteSummary:
+      type: object
+      required: [summary, keyPoints]
+      properties:
+        summary: { type: string }
+        keyPoints:
+          type: array
+          items: { type: string }
+    StudySessionInput:
+      type: object
+      required: [minutes]
+      properties:
+        minutes: { type: integer, minimum: 1 }
+        subject: { type: string }
+    StudySession:
+      type: object
+      required: [id, minutes, subject, completedAt]
+      properties:
+        id: { type: integer }
+        minutes: { type: integer }
+        subject: { type: string }
+        completedAt: { type: string, format: date-time }
+

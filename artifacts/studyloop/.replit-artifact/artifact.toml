@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "StudyLoop"
+description = "A student learning and productivity app that helps learners plan study sessions, organize notes, track progress, and stay consistent."
+version = "1.0.0"
+id = "artifacts/studyloop"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23914
+
+[services.development]
+run = "pnpm --filter @workspace/studyloop run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/studyloop", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/studyloop/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23914"
+BASE_PATH = "/"

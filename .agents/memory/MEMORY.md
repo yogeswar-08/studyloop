@@ -1,0 +1,1 @@
+- [StudyLoop AI fallback](studyloop-ai-fallback.md) — keep planner, assistant, and note-summary demos usable when the provider is unavailable or rate-limited.
