@@ -6,9 +6,8 @@ import { installDemoApi } from './demo-api';
 
 import './index.css';
 
-// Keep the rest of StudyLoop self-contained, but replace the old fixed Assistant
-// responses with a real local open-source language model running in the browser.
-// No API key is required; inference happens on-device through WebLLM/WebGPU.
+// StudyLoop's public demo runs the Assistant with a local open-source model in the browser.
+// No API key is required. Inference happens on-device through WebLLM/WebGPU.
 installDemoApi();
 const demoFetch = window.fetch.bind(window);
 
@@ -18,9 +17,13 @@ const chatHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 async function getLocalEngine() {
   if (!localEnginePromise) {
     localEnginePromise = (async () => {
+      if (!('gpu' in navigator)) {
+        throw new Error('WebGPU is not available in this browser. Please use the latest Chrome or Edge.');
+      }
+
       const webllm = await import(/* @vite-ignore */ 'https://esm.sh/@mlc-ai/web-llm');
       return webllm.CreateMLCEngine('Qwen2.5-0.5B-Instruct-q4f16_1-MLC', {
-        initProgressCallback: (report: { text?: string; progress?: number }) => {
+        initProgressCallback: (report: { text?: string }) => {
           window.dispatchEvent(new CustomEvent('studyloop-ai-progress', {
             detail: report?.text || 'Loading StudyLoop AI…',
           }));
@@ -57,7 +60,11 @@ function makeTakeaways(question: string, answer: string) {
 
 async function localAssistant(input: RequestInfo | URL, init?: RequestInit) {
   let body: any = {};
-  try { body = init?.body ? JSON.parse(String(init.body)) : {}; } catch { /* handled below */ }
+  try {
+    body = init?.body ? JSON.parse(String(init.body)) : {};
+  } catch {
+    return jsonResponse({ error: 'Invalid request.' }, 400);
+  }
 
   const question = String(body.question || '').trim();
   const mode = String(body.mode || 'chat');
@@ -68,24 +75,23 @@ async function localAssistant(input: RequestInfo | URL, init?: RequestInit) {
     const messages = [
       {
         role: 'system' as const,
-        content: `You are StudyLoop AI. You are a general-purpose student assistant.
-IMPORTANT: Answer ONLY the student's current question. Never reuse a previous canned answer.
+        content: `You are StudyLoop AI, a general-purpose student assistant.
+Answer ONLY the student's current question. Never use a preset or canned answer.
 You can answer mathematics, science, programming, AI/ML, writing, projects, study planning, general knowledge, and everyday questions.
-If asked for code, write the requested code. If asked for a definition, define the exact term. If asked to calculate, calculate it. If asked why/how, directly explain why/how.
-Be concise but useful and use simple language. If the question is ambiguous, state the assumption instead of changing the topic.
-Mode: ${mode}.
-Return normal plain text only. Do not return JSON.`,
+If asked for code, provide the requested code. If asked for a definition, define the exact term. If asked to calculate, calculate it. If asked why or how, directly explain why or how.
+Be accurate, concise, beginner-friendly, and stay on topic. If the question is ambiguous, state your assumption.
+Mode: ${mode}. Return plain text only.`,
       },
       ...chatHistory.slice(-6),
       { role: 'user' as const, content: question },
     ];
 
+    // Do not send response_format: some WebLLM versions reject the text format option.
     const response = await engine.chat.completions.create({
       messages,
       temperature: 0.2,
       top_p: 0.9,
       max_tokens: 700,
-      response_format: { type: 'text' },
     });
 
     const answer = String(response?.choices?.[0]?.message?.content || '').trim();
@@ -101,9 +107,10 @@ Return normal plain text only. Do not return JSON.`,
       practiceQuestion: `Want a practice question based on: ${question}?`,
     });
   } catch (error) {
+    console.error('StudyLoop local AI error:', error);
     return jsonResponse({
       error: error instanceof Error ? error.message : 'Local AI could not start.',
-      hint: 'The Assistant uses a local browser model. The first question downloads the model; use Chrome or Edge with WebGPU enabled and wait for the model to finish loading.',
+      hint: 'The Assistant uses a local browser model. The first question downloads the model. Use the latest Chrome or Edge and wait for the model to finish loading.',
     }, 503);
   }
 }
@@ -111,7 +118,11 @@ Return normal plain text only. Do not return JSON.`,
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   let path = rawUrl;
-  try { path = new URL(rawUrl, window.location.origin).pathname; } catch { /* keep raw URL */ }
+  try {
+    path = new URL(rawUrl, window.location.origin).pathname;
+  } catch {
+    // Keep the raw URL if it cannot be parsed.
+  }
 
   if (path === '/api/assistant/ask') return localAssistant(input, init);
   return demoFetch(input, init);
