@@ -6,8 +6,6 @@ import { installDemoApi } from './demo-api';
 
 import './index.css';
 
-// StudyLoop's public demo runs the Assistant with a local open-source model in the browser.
-// No API key is required. Inference happens on-device through WebLLM/WebGPU.
 installDemoApi();
 const demoFetch = window.fetch.bind(window);
 
@@ -24,13 +22,11 @@ async function getLocalEngine() {
       if (!('gpu' in navigator)) {
         throw new Error('WebGPU is not available. Please use the latest Chrome or Edge on a supported device.');
       }
-
       aiProgress('Starting StudyLoop AI…');
-      // jsDelivr is used instead of an unpinned esm.sh transform so the browser receives
-      // the published WebLLM package directly.
-      const webllm = await import(/* @vite-ignore */ 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.84/+esm');
+      // Pin a known-good WebLLM release. Recent WebLLM releases have a reported
+      // WebGPU regression on some integrated GPUs, so avoid floating versions.
+      const webllm = await import(/* @vite-ignore */ 'https://esm.run/@mlc-ai/web-llm@0.2.82');
       aiProgress('Loading the local AI model…');
-
       return webllm.CreateMLCEngine('Qwen2.5-0.5B-Instruct-q4f16_1-MLC', {
         initProgressCallback: (report: { text?: string; progress?: number }) => {
           const pct = typeof report?.progress === 'number' ? ` ${Math.round(report.progress * 100)}%` : '';
@@ -59,13 +55,11 @@ function makeTakeaways(question: string, answer: string) {
     .map((s) => s.trim())
     .filter(Boolean)
     .slice(0, 3);
-
   const fallbacks = [
     `Answer the exact question: ${question.slice(0, 80)}${question.length > 80 ? '…' : ''}`,
     'Ask a follow-up if you want an example or a simpler explanation.',
     'You can switch from explanation to practice by asking for questions.',
   ];
-
   return [...firstSentences, ...fallbacks].slice(0, 3);
 }
 
@@ -82,8 +76,8 @@ async function localAssistant(input: RequestInfo | URL, init?: RequestInit) {
   if (!question) return jsonResponse({ error: 'Question is required.' }, 400);
 
   try {
-    aiProgress('Thinking…');
     const engine = await getLocalEngine();
+    aiProgress('Thinking…');
     const messages = [
       {
         role: 'system' as const,
@@ -133,10 +127,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   let path = rawUrl;
   try {
     path = new URL(rawUrl, window.location.origin).pathname;
-  } catch {
-    // Keep the raw URL if it cannot be parsed.
-  }
-
+  } catch {}
   if (path === '/api/assistant/ask') return localAssistant(input, init);
   return demoFetch(input, init);
 };
