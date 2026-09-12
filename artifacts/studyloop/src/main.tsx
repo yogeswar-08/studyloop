@@ -8,6 +8,35 @@ import './index.css';
 
 installDemoApi();
 
+function installHostedAssistant() {
+  const localFetch = window.fetch.bind(window);
+  const AI_URL = 'https://studyloop-ai-api.onrender.com/api/assistant/ask';
+
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    let pathname = rawUrl;
+    try { pathname = new URL(rawUrl, window.location.origin).pathname; } catch {}
+
+    if (pathname === '/api/assistant/ask' && (init?.method || 'GET').toUpperCase() === 'POST') {
+      try {
+        const response = await fetch(AI_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: init?.body,
+        });
+        if (response.ok) return response;
+      } catch (error) {
+        console.warn('Hosted StudyLoop AI unavailable; using local assistant fallback.', error);
+      }
+      return localFetch(input, init);
+    }
+
+    return localFetch(input, init);
+  };
+}
+
+installHostedAssistant();
+
 function installPhoneFocusMode() {
   const style = document.createElement('style');
   style.textContent = `
