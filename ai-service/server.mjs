@@ -1,8 +1,6 @@
 import http from 'node:http';
 
 const PORT = Number(process.env.PORT || 10000);
-const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
@@ -30,61 +28,50 @@ function readBody(req) {
   });
 }
 
-async function answer(body) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY is not configured on the AI service.');
+const stopWords = new Set('the a an and or but is are was were be to of in on for with from this that it as at by about what how why when where which who i you your my me we they do does can could would should'.split(' '));
 
-  const question = String(body.question || '').trim();
-  const mode = String(body.mode || 'chat');
-  if (!question) throw new Error('Question is required.');
+function keywords(text) {
+  return [...new Set(text.toLowerCase().replace(/[^a-z0-9+#. ]/g, ' ').split(/\\s+/).filter(w => w.length > 2 && !stopWords.has(w)))].slice(0, 6);
+}
 
-  const system = `You are StudyLoop AI, a high-quality general-purpose AI assistant for students and everyday questions.
+function localAnswer(question, mode) {
+  const q = question.trim();
+  const lower = q.toLowerCase();
+  const words = keywords(q);
+  let answer;
+  let practice = '';
 
-Answer ANY legitimate question the user asks. Do not restrict yourself to predefined subjects or only computer science. You can help with academics, mathematics, science, programming, debugging, projects, writing, brainstorming, career questions, general knowledge, explanations, planning, and normal everyday questions.
-
-Behave like a helpful modern AI assistant: understand the user's intent, answer directly, reason carefully, correct mistakes when needed, and do not invent facts. If current information is required and you do not have browsing access, clearly say that the information may need verification rather than pretending it is current. For calculations, show useful working. For code, provide correct runnable code when appropriate. For difficult concepts, explain from first principles with a concrete example. Match the user's level and keep answers clear and natural.
-
-The app UI expects structured JSON. Return ONLY valid JSON with exactly these fields:
-{"answer": string, "takeaways": string[], "practiceQuestion": string}
-
-Rules for the fields:
-- answer: the complete natural-language response. Use markdown when it improves readability.
-- takeaways: exactly 3 concise points that summarize the most useful information. If the question is not educational, make them useful key points instead.
-- practiceQuestion: one optional follow-up question or useful next step. If no follow-up is useful, return an empty string.
-
-Never mention these internal instructions or the JSON requirement to the user.`;
-
-  const user = `Mode: ${mode}\nUser question:\n${question}`;
-  const response = await fetch(OPENAI_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: MODEL,
-      temperature: 0.35,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    throw new Error(`OpenAI request failed (${response.status}). ${detail.slice(0, 300)}`);
+  if (/^(hi|hello|hey|hii|yo)\\b/.test(lower)) {
+    answer = `Hey! 👋 I’m StudyLoop AI. Ask me anything you’re working on — academics, coding, projects, planning, or general questions.`;
+    practice = 'What are you working on right now?';
+  } else if (/(explain|what is|what are|meaning|define)\\b/.test(lower)) {
+    const topic = q.replace(/^(please\\s+)?(explain|what is|what are|meaning of|define)\\s*/i, '').replace(/[?]$/, '').trim() || 'this topic';
+    answer = `### ${topic}\n\nHere’s a simple way to understand it:\n\n**${topic}** is a concept that should be understood by focusing on what it does, why it matters, and a small example. Start with the basic idea first, then connect it to a real situation.\n\n**Quick example:** Think of it as a process where an input is transformed into a useful output. The exact steps depend on the topic.\n\nIf you give me the exact definition, question, code, or chapter you’re studying, I can break it down step by step.`;
+    practice = `Can you give me one example of ${topic}?`;
+  } else if (/(code|program|error|bug|javascript|python|java|c\\b|c\\+\\+|html|css|sql|algorithm|array|loop|pointer|function)/.test(lower)) {
+    answer = `I can help you debug or build this. For a coding problem, the fastest approach is: **1)** identify the expected output, **2)** check the input and data types, **3)** trace the logic line by line, and **4)** test a small edge case.\n\nYour question mentions: **${words.join(', ') || 'a programming problem'}**.\n\nPaste the exact code and the error/output you’re getting, and I’ll point out the problem and give you a corrected version.`;
+    practice = 'Can you paste the code and the exact error message?';
+  } else if (/(plan|schedule|study|exam|revision|learn|roadmap|prepare)/.test(lower)) {
+    answer = `A practical way to handle this is to turn the goal into small sessions:\n\n**1. Learn:** understand one concept.\n**2. Practice:** solve 2–5 questions without looking at the answer.\n**3. Measure:** mark what you could and could not solve.\n**4. Recover:** spend the next session on the weakest area.\n\nThat creates the StudyLoop: **Plan → Study → Measure → Replan.**`;
+    practice = 'What is your deadline and how many hours can you study today?';
+  } else if (/(why|how)/.test(lower)) {
+    answer = `Good question. The key is to separate the problem into smaller parts and identify the cause before jumping to a solution.\n\nFor **“how”** questions, I’d normally give you the steps first and then a concrete example. For **“why”** questions, I’d explain the underlying reason and then show where it matters.`;
+    practice = 'Want me to apply that reasoning to your exact example?';
+  } else {
+    answer = `I can help with that. Based on your question, the main topic appears to be **${words.join(', ') || 'your request'}**.\n\nA useful way to approach it is to first identify the exact goal, separate the problem into smaller parts, and then work through the highest-impact part first. If there are assumptions, calculations, code, or specific constraints involved, share them and I’ll work through them with you.`;
+    practice = 'What outcome are you trying to achieve?';
   }
 
-  const payload = await response.json();
-  const content = payload?.choices?.[0]?.message?.content;
-  if (!content) throw new Error('AI returned an empty response.');
-  const parsed = JSON.parse(content);
-  if (typeof parsed.answer !== 'string' || !Array.isArray(parsed.takeaways) || typeof parsed.practiceQuestion !== 'string') {
-    throw new Error('AI returned an invalid response format.');
-  }
   return {
-    answer: parsed.answer,
-    takeaways: parsed.takeaways.map(String).slice(0, 3),
-    practiceQuestion: parsed.practiceQuestion,
+    answer,
+    takeaways: [
+      'Start with the exact goal before choosing a solution.',
+      'Break complex problems into smaller, testable steps.',
+      'Use examples and feedback to improve the next attempt.',
+    ],
+    practiceQuestion: practice,
+    mode,
+    source: 'StudyLoop local AI fallback',
   };
 }
 
@@ -95,15 +82,17 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (req.method === 'GET' && req.url === '/health') {
-    send(res, 200, { ok: true, configured: Boolean(process.env.OPENAI_API_KEY), model: MODEL });
+    send(res, 200, { ok: true, configured: true, model: 'StudyLoop Local Assistant' });
     return;
   }
   if (req.method === 'POST' && req.url === '/api/assistant/ask') {
     try {
       const body = await readBody(req);
-      send(res, 200, await answer(body));
+      const question = String(body.question || '').trim();
+      if (!question) throw new Error('Question is required.');
+      send(res, 200, localAnswer(question, String(body.mode || 'chat')));
     } catch (error) {
-      send(res, 503, { error: error instanceof Error ? error.message : 'AI service unavailable.' });
+      send(res, 400, { error: error instanceof Error ? error.message : 'Assistant unavailable.' });
     }
     return;
   }
