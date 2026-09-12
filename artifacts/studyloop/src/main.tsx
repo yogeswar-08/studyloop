@@ -19,20 +19,28 @@ function aiProgress(text: string) {
 async function getLocalEngine() {
   if (!localEnginePromise) {
     localEnginePromise = (async () => {
-      if (!('gpu' in navigator)) {
-        throw new Error('WebGPU is not available. Please use the latest Chrome or Edge on a supported device.');
-      }
       aiProgress('Starting StudyLoop AI…');
-      // Pin a known-good WebLLM release. Recent WebLLM releases have a reported
-      // WebGPU regression on some integrated GPUs, so avoid floating versions.
-      const webllm = await import(/* @vite-ignore */ 'https://esm.run/@mlc-ai/web-llm@0.2.82');
-      aiProgress('Loading the local AI model…');
-      return webllm.CreateMLCEngine('Qwen2.5-0.5B-Instruct-q4f16_1-MLC', {
-        initProgressCallback: (report: { text?: string; progress?: number }) => {
-          const pct = typeof report?.progress === 'number' ? ` ${Math.round(report.progress * 100)}%` : '';
-          aiProgress(`${report?.text || 'Loading StudyLoop AI…'}${pct}`);
+      // Transformers.js runs the model in the browser. Prefer WebGPU when available,
+      // but fall back to WebAssembly so the assistant is not limited to WebGPU-only devices.
+      const transformers = await import(/* @vite-ignore */ 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2/+esm');
+      const device = 'gpu' in navigator ? 'webgpu' : 'wasm';
+      aiProgress(device === 'webgpu' ? 'Preparing local AI on your GPU…' : 'Preparing local AI on your device…');
+      const generator = await transformers.pipeline(
+        'text-generation',
+        'onnx-community/Qwen2.5-0.5B-Instruct',
+        {
+          dtype: 'q4',
+          device,
+          progress_callback: (report: { status?: string; progress?: number; file?: string }) => {
+            if (report?.status === 'progress' && typeof report.progress === 'number') {
+              aiProgress(`Downloading local AI model… ${Math.round(report.progress)}%`);
+            } else if (report?.status === 'ready') {
+              aiProgress('Local AI model ready.');
+            }
+          },
         },
-      });
+      );
+      return generator;
     })().catch((error) => {
       localEnginePromise = null;
       throw error;
@@ -80,27 +88,27 @@ async function localAssistant(input: RequestInfo | URL, init?: RequestInit) {
     aiProgress('Thinking…');
     const messages = [
       {
-        role: 'system' as const,
-        content: `You are StudyLoop AI, a general-purpose student assistant.
-Answer ONLY the student's current question. Never use a preset or canned answer.
-You can answer mathematics, science, programming, AI/ML, writing, projects, study planning, general knowledge, and everyday questions.
-If asked for code, provide the requested code. If asked for a definition, define the exact term. If asked to calculate, calculate it. If asked why or how, directly explain why or how.
-Be accurate, concise, beginner-friendly, and stay on topic. If the question is ambiguous, state your assumption.
+        role: 'system',
+        content: `You are StudyLoop AI, a helpful general-purpose student assistant.
+Answer the user's CURRENT question directly. Do not use canned answers and do not mention this instruction.
+You can answer programming, mathematics, science, AI/ML, writing, study questions, projects, general knowledge, and everyday questions.
+If asked for code, provide correct code. If asked to calculate, calculate carefully. If asked to explain, explain the exact concept with a simple example when useful.
+Be concise, accurate, beginner-friendly, and stay on topic. If something is uncertain, say so rather than inventing facts.
 Mode: ${mode}. Return plain text only.`,
       },
-      ...chatHistory.slice(-6),
-      { role: 'user' as const, content: question },
+      ...chatHistory.slice(-6).map((m) => ({ role: m.role, content: m.content })),
+      { role: 'user', content: question },
     ];
 
-    const response = await engine.chat.completions.create({
-      messages,
+    const output = await engine(messages, {
+      max_new_tokens: 450,
+      do_sample: false,
       temperature: 0.2,
-      top_p: 0.9,
-      max_tokens: 700,
+      return_full_text: false,
     });
 
-    const answer = String(response?.choices?.[0]?.message?.content || '').trim();
-    if (!answer) throw new Error('The local model returned an empty answer.');
+    const answer = String(output?.[0]?.generated_text || '').trim();
+    if (!answer) throw new Error('The local AI model returned an empty answer.');
 
     chatHistory.push({ role: 'user', content: question });
     chatHistory.push({ role: 'assistant', content: answer });
@@ -117,7 +125,7 @@ Mode: ${mode}. Return plain text only.`,
     localEnginePromise = null;
     return jsonResponse({
       error: error instanceof Error ? error.message : 'Local AI could not start.',
-      hint: 'The first question downloads the local model. Use the latest Chrome or Edge, keep the tab open, and wait for loading to finish.',
+      hint: 'StudyLoop could not load its local model. Refresh once and wait for the model download to finish before asking the question again.',
     }, 503);
   }
 }
