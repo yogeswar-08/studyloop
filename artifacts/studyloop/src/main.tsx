@@ -6,26 +6,23 @@ import { installDemoApi } from './demo-api';
 
 import './index.css';
 
-// The rest of StudyLoop remains a self-contained demo API. The Assistant is
-// different: it runs a small open-source LLM directly in the user's browser
-// with WebLLM/WebGPU, so it does not need an API key and does not return one
-// of the old hardcoded answers for unrelated questions.
-const nativeFetch = window.fetch.bind(window);
+// Keep the rest of StudyLoop self-contained, but replace the old fixed Assistant
+// responses with a real local open-source language model running in the browser.
+// No API key is required; inference happens on-device through WebLLM/WebGPU.
 installDemoApi();
 const demoFetch = window.fetch.bind(window);
 
 let localEnginePromise: Promise<any> | null = null;
+const chatHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
 async function getLocalEngine() {
   if (!localEnginePromise) {
     localEnginePromise = (async () => {
-      // @vite-ignore keeps this as a browser-side ESM import rather than
-      // making Vite try to bundle the remote module during the build.
       const webllm = await import(/* @vite-ignore */ 'https://esm.sh/@mlc-ai/web-llm');
-      return webllm.CreateMLCEngine('SmolLM2-360M-Instruct-q4f16_1-MLC', {
-        initProgressCallback: (report: { text?: string }) => {
+      return webllm.CreateMLCEngine('Qwen2.5-0.5B-Instruct-q4f16_1-MLC', {
+        initProgressCallback: (report: { text?: string; progress?: number }) => {
           window.dispatchEvent(new CustomEvent('studyloop-ai-progress', {
-            detail: report?.text || 'Loading local AI model…',
+            detail: report?.text || 'Loading StudyLoop AI…',
           }));
         },
       });
@@ -34,60 +31,80 @@ async function getLocalEngine() {
   return localEnginePromise;
 }
 
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function makeTakeaways(question: string, answer: string) {
+  const firstSentences = answer
+    .replace(/```[\s\S]*?```/g, '')
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+
+  const fallbacks = [
+    `Answer the exact question: ${question.slice(0, 80)}${question.length > 80 ? '…' : ''}`,
+    'Ask a follow-up if you want an example or a simpler explanation.',
+    'You can switch from explanation to practice by asking for questions.',
+  ];
+
+  return [...firstSentences, ...fallbacks].slice(0, 3);
+}
+
 async function localAssistant(input: RequestInfo | URL, init?: RequestInit) {
-  const body = init?.body ? JSON.parse(String(init.body)) : {};
+  let body: any = {};
+  try { body = init?.body ? JSON.parse(String(init.body)) : {}; } catch { /* handled below */ }
+
   const question = String(body.question || '').trim();
   const mode = String(body.mode || 'chat');
-  if (!question) {
-    return new Response(JSON.stringify({ error: 'Question is required.' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+  if (!question) return jsonResponse({ error: 'Question is required.' }, 400);
 
   try {
     const engine = await getLocalEngine();
+    const messages = [
+      {
+        role: 'system' as const,
+        content: `You are StudyLoop AI. You are a general-purpose student assistant.
+IMPORTANT: Answer ONLY the student's current question. Never reuse a previous canned answer.
+You can answer mathematics, science, programming, AI/ML, writing, projects, study planning, general knowledge, and everyday questions.
+If asked for code, write the requested code. If asked for a definition, define the exact term. If asked to calculate, calculate it. If asked why/how, directly explain why/how.
+Be concise but useful and use simple language. If the question is ambiguous, state the assumption instead of changing the topic.
+Mode: ${mode}.
+Return normal plain text only. Do not return JSON.`,
+      },
+      ...chatHistory.slice(-6),
+      { role: 'user' as const, content: question },
+    ];
+
     const response = await engine.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: `You are StudyLoop AI, a helpful general-purpose academic assistant. Answer the student's ACTUAL question, not a preset example. You can answer questions about mathematics, science, programming, AI/ML, writing, projects, study planning, general knowledge, and everyday topics. Be accurate, direct, and beginner-friendly. If the question asks for steps, give steps. If it asks for a definition, define the exact term. If it asks for code, provide code. Do not claim to know current information you cannot verify. Mode: ${mode}. Return ONLY JSON with exactly three fields: answer (string), takeaways (array of exactly 3 short strings), practiceQuestion (string).`,
-        },
-        { role: 'user', content: question },
-      ],
-      temperature: 0.35,
-      max_tokens: 512,
+      messages,
+      temperature: 0.2,
+      top_p: 0.9,
+      max_tokens: 700,
+      response_format: { type: 'text' },
     });
 
-    const raw = response?.choices?.[0]?.message?.content?.trim() || '';
-    let parsed: any = null;
-    try { parsed = JSON.parse(raw); } catch { parsed = null; }
+    const answer = String(response?.choices?.[0]?.message?.content || '').trim();
+    if (!answer) throw new Error('The local model returned an empty answer.');
 
-    const result = parsed && typeof parsed.answer === 'string'
-      ? {
-          answer: parsed.answer,
-          takeaways: Array.isArray(parsed.takeaways) ? parsed.takeaways.map(String).slice(0, 3) : [],
-          practiceQuestion: typeof parsed.practiceQuestion === 'string' ? parsed.practiceQuestion : '',
-        }
-      : {
-          answer: raw || 'The local model did not return an answer. Please try the question again.',
-          takeaways: ['The answer was generated locally in your browser.', 'Ask a more specific question if you want a deeper explanation.', 'You can ask a follow-up question to continue the topic.'],
-          practiceQuestion: '',
-        };
+    chatHistory.push({ role: 'user', content: question });
+    chatHistory.push({ role: 'assistant', content: answer });
+    while (chatHistory.length > 8) chatHistory.shift();
 
-    while (result.takeaways.length < 3) result.takeaways.push('Ask a follow-up question for more detail.');
-    return new Response(JSON.stringify(result), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
+    return jsonResponse({
+      answer,
+      takeaways: makeTakeaways(question, answer),
+      practiceQuestion: `Want a practice question based on: ${question}?`,
     });
   } catch (error) {
-    return new Response(JSON.stringify({
+    return jsonResponse({
       error: error instanceof Error ? error.message : 'Local AI could not start.',
-      hint: 'StudyLoop needs a WebGPU-capable browser. Refresh and try again; the first run downloads the local model once.',
-    }), {
-      status: 503,
-      headers: { 'Content-Type': 'application/json' },
-    });
+      hint: 'The Assistant uses a local browser model. The first question downloads the model; use Chrome or Edge with WebGPU enabled and wait for the model to finish loading.',
+    }, 503);
   }
 }
 
