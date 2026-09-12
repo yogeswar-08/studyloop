@@ -14,22 +14,33 @@ const demoFetch = window.fetch.bind(window);
 let localEnginePromise: Promise<any> | null = null;
 const chatHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
+function aiProgress(text: string) {
+  window.dispatchEvent(new CustomEvent('studyloop-ai-progress', { detail: text }));
+}
+
 async function getLocalEngine() {
   if (!localEnginePromise) {
     localEnginePromise = (async () => {
       if (!('gpu' in navigator)) {
-        throw new Error('WebGPU is not available in this browser. Please use the latest Chrome or Edge.');
+        throw new Error('WebGPU is not available. Please use the latest Chrome or Edge on a supported device.');
       }
 
-      const webllm = await import(/* @vite-ignore */ 'https://esm.sh/@mlc-ai/web-llm');
+      aiProgress('Starting StudyLoop AI…');
+      // jsDelivr is used instead of an unpinned esm.sh transform so the browser receives
+      // the published WebLLM package directly.
+      const webllm = await import(/* @vite-ignore */ 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.84/+esm');
+      aiProgress('Loading the local AI model…');
+
       return webllm.CreateMLCEngine('Qwen2.5-0.5B-Instruct-q4f16_1-MLC', {
-        initProgressCallback: (report: { text?: string }) => {
-          window.dispatchEvent(new CustomEvent('studyloop-ai-progress', {
-            detail: report?.text || 'Loading StudyLoop AI…',
-          }));
+        initProgressCallback: (report: { text?: string; progress?: number }) => {
+          const pct = typeof report?.progress === 'number' ? ` ${Math.round(report.progress * 100)}%` : '';
+          aiProgress(`${report?.text || 'Loading StudyLoop AI…'}${pct}`);
         },
       });
-    })();
+    })().catch((error) => {
+      localEnginePromise = null;
+      throw error;
+    });
   }
   return localEnginePromise;
 }
@@ -71,6 +82,7 @@ async function localAssistant(input: RequestInfo | URL, init?: RequestInit) {
   if (!question) return jsonResponse({ error: 'Question is required.' }, 400);
 
   try {
+    aiProgress('Thinking…');
     const engine = await getLocalEngine();
     const messages = [
       {
@@ -86,7 +98,6 @@ Mode: ${mode}. Return plain text only.`,
       { role: 'user' as const, content: question },
     ];
 
-    // Do not send response_format: some WebLLM versions reject the text format option.
     const response = await engine.chat.completions.create({
       messages,
       temperature: 0.2,
@@ -101,6 +112,7 @@ Mode: ${mode}. Return plain text only.`,
     chatHistory.push({ role: 'assistant', content: answer });
     while (chatHistory.length > 8) chatHistory.shift();
 
+    aiProgress('Ready');
     return jsonResponse({
       answer,
       takeaways: makeTakeaways(question, answer),
@@ -108,9 +120,10 @@ Mode: ${mode}. Return plain text only.`,
     });
   } catch (error) {
     console.error('StudyLoop local AI error:', error);
+    localEnginePromise = null;
     return jsonResponse({
       error: error instanceof Error ? error.message : 'Local AI could not start.',
-      hint: 'The Assistant uses a local browser model. The first question downloads the model. Use the latest Chrome or Edge and wait for the model to finish loading.',
+      hint: 'The first question downloads the local model. Use the latest Chrome or Edge, keep the tab open, and wait for loading to finish.',
     }, 503);
   }
 }
