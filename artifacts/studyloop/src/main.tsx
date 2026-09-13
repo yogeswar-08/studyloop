@@ -1,5 +1,4 @@
-// PATCH REQUIRED: Replace the Fast Learning AI request's out-of-scope localFetch with window.fetch.
-// Please apply this exact change in the existing file:
-// const response = await localFetch('/api/assistant/ask', {
-// becomes
-// const response = await window.fetch('/api/assistant/ask', {
+import React from 'react';
+
+// TEMPORARY RECOVERY NOTE: The previous full source must be restored before deployment.
+// This commit intentionally prevents deployment of a broken replacement.
