@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Carpenter and His Student</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#76583b,#2a1a10 65%,#120b07);font-family:Georgia,serif;color:#302116;display:flex;flex-direction:column;align-items:center;padding:18px 10px}
+h1{color:#fff;font-weight:500;text-align:center;margin:4px 0}.sub{color:#ddd;font:12px system-ui;margin-bottom:16px}.book{width:min(94vw,720px);height:min(78vh,760px);position:relative;perspective:1800px;filter:drop-shadow(0 24px 28px #0009)}
+.page{position:absolute;inset:0;background:#f5ead7;border-radius:4px 12px 12px 4px;overflow:hidden;transform-origin:left center;transition:transform .72s cubic-bezier(.2,.75,.2,1);backface-visibility:hidden;box-shadow:inset 14px 0 24px #4b2e1718}
+.page.turned{transform:rotateY(-180deg)}.pic{height:54%;background-size:cover;background-position:center;position:relative}.pic:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,#0007)}
+.text{height:46%;padding:22px 25px;overflow:auto}.text h2{margin:0 0 10px;font-size:clamp(19px,3vw,28px)}.text p{font-size:clamp(14px,2.1vw,18px);line-height:1.55;margin:0 0 9px}.quote{font-style:italic;border-left:3px solid #9b7548;padding-left:14px;margin-top:12px}.moral{display:flex;flex-direction:column;justify-content:center;height:100%;padding:34px;text-align:center}.moral h2{font-size:30px}.controls{display:flex;gap:12px;align-items:center;margin-top:18px;font:14px system-ui;color:#fff}button{border:1px solid #fff5;background:#ffffff18;color:#fff;padding:10px 18px;border-radius:999px;cursor:pointer}button:disabled{opacity:.35}.counter{min-width:85px;text-align:center}.hint{color:#bbb;font:11px system-ui;margin-top:9px;text-align:center}
+</style>
+</head>
+<body>
+<h1>The Carpenter and His Student</h1><div class="sub">An interactive storybook</div>
+<div class="book" id="book"></div>
+<div class="controls"><button id="prev">← Previous</button><span class="counter" id="counter"></span><button id="next">Next →</button></div>
+<div class="hint">Tap the page • Swipe left/right • Use arrow keys</div>
+<script>
+const imgs=[
+"https://images.unsplash.com/photo-1769353086138-19ee65291a04?auto=format&fit=crop&w=1600&q=82",
+"https://images.unsplash.com/photo-1756736668479-334787633abf?auto=format&fit=crop&w=1600&q=82",
+"https://images.unsplash.com/photo-1683115096447-5d01c11d3ead?auto=format&fit=crop&w=1600&q=82"
+];
+const pages=[
+["Akira the Master Carpenter","In a quiet mountain village lived Akira, a master carpenter known for furniture and houses built to last for generations.","He believed good craftsmanship was more than using tools correctly. It was about understanding the wood.",0],
+["A Young Student Arrives","One day a young man named Taro came to Akira. “Master Akira, I want to become a great carpenter. Will you teach me?”","Akira quietly answered: “Watch the wood. Feel the tree.”",0],
+["The First Lessons","Taro expected saws, hammers and chisels. Instead, Akira gave him simple tasks: sanding wood, sweeping the workshop, organizing tools and stacking timber.","After many days, Taro became frustrated. “When will you teach me the real secrets?”",1],
+["Into the Forest","Akira simply said, “Follow me.” They walked deep into the forest until they reached a huge, ancient oak tree.","Akira placed his hand on its trunk and asked Taro to listen.",2],
+["Listen to the Tree","“I can hear the wind,” Taro said.","Akira smiled. “You are hearing the wind, but you are not yet listening to the tree.”",2],
+["Every Mark Tells a Story","The oak had survived storms, strong winds, droughts and many seasons. Its branches and trunk carried the marks of its life.","“Every curve and every mark tells you something about what it has experienced.”",2],
+["Understand the Wood","Akira explained that every piece of wood has its own strengths, weaknesses, grain and character.","A skilled carpenter studies the natural direction of the grain before cutting or shaping it.",1],
+["Work With Nature","“If you fight the nature of the wood, the wood will resist you. But if you understand it, the wood will help guide your work.”", "Taro finally understood what his master had been teaching him all along.",0],
+["Taro Changes","From that day forward, Taro became more patient. Before cutting wood, he studied its grain. Before shaping it, he examined its natural curves and strength.","Slowly, his work began to improve.",1],
+["A Skilled Craftsman","Years later, Taro became a skilled carpenter himself. His creations were beautiful, strong and carefully shaped to bring out the natural character of the wood.","People began to admire his craftsmanship.",0],
+["The Lesson Remembered","Whenever someone asked Taro how he became such a good craftsman, he remembered Akira and the ancient oak tree.","He never forgot that patience and observation came before mastery.",2],
+["A True Craftsman","“A true craftsman does not simply force the material to obey. First, they learn to understand it.”","Taro carried Akira’s lesson throughout his life.",0],
+["Moral","True craftsmanship begins with patience, observation and listening.","When we understand the nature of something instead of trying to force it, we can bring out its natural beauty and strength.",2]
+];
+const book=document.getElementById("book"),counter=document.getElementById("counter"),prev=document.getElementById("prev"),next=document.getElementById("next");
+pages.forEach((p,i)=>{const el=document.createElement("section");el.className="page";el.dataset.i=i;el.style.zIndex=pages.length-i;const pic=document.createElement("div");pic.className="pic";pic.style.backgroundImage="url('"+imgs[p[3]]+"')";const tx=document.createElement("div");tx.className="text";tx.innerHTML="<h2>"+p[0]+"</h2><p>"+p[1]+"</p><p class='quote'>"+p[2]+"</p>";el.append(pic,tx);book.append(el)});
+let cur=0,busy=false;
+function ui(){counter.textContent="Page "+(cur+1)+" of "+pages.length;prev.disabled=cur===0;next.disabled=cur===pages.length-1}
+function go(n){if(busy||n<0||n>=pages.length)return;busy=true;if(n>cur)book.querySelector('[data-i="'+cur+'"]').classList.add("turned");else{cur--;book.querySelector('[data-i="'+cur+'"]').classList.remove("turned");ui();setTimeout(()=>busy=false,760);return}cur++;ui();setTimeout(()=>busy=false,760)}
+next.onclick=()=>go(cur+1);prev.onclick=()=>go(cur-1);
+book.onclick=e=>{const r=book.getBoundingClientRect();go(e.clientX-r.left>r.width/2?cur+1:cur-1)};
+document.onkeydown=e=>{if(e.key==="ArrowRight")go(cur+1);if(e.key==="ArrowLeft")go(cur-1)};
+let sx=0;book.ontouchstart=e=>sx=e.touches[0].clientX;book.ontouchend=e=>{let d=e.changedTouches[0].clientX-sx;if(Math.abs(d)>45)go(d<0?cur+1:cur-1)};
+ui();
+</script>
+</body>
+</html>
